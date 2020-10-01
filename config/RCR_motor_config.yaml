@@ -1,0 +1,16 @@
+PowerLimit: 1
+GroupNum: 0
+DeviceNum: 1
+Mode: 3  # 1: open loop; 3: velocity; 4: position;5:vel-pos;
+
+
+Diameter: 508.0 #40*12.7mm, brush head diameter
+BasicEncoderLines: 1500
+ReductionRatio: 40
+
+
+P: 100
+I: 0
+D: 0
+
+# Can_File: "/home/sgl/catkin_new/src/robomodule/config/can_config.yaml"

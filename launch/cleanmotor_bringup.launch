@@ -1,0 +1,9 @@
+<launch>
+   <arg name="motor_name" default="cleanMotor" />
+   <!-- <arg name="arg2" default="this is arg2" /> -->
+   <!-- <param name="n_arg" value="$(arg arg1)" /> -->
+   <node pkg="robomodule" type="robomodule_node" name="robomodule_node" 
+   args="$(arg arg1)" output="screen">
+        <!-- <param name="pn_arg" value="$(arg arg2)"/> -->
+   </node>
+</launch>
