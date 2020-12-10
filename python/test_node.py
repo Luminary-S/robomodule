@@ -5,7 +5,7 @@
 
 import yaml,os
 import rospy,time,math
-from ur_node import URNode
+# from ur_node import URNode
 
 class testNode(URNode):
 

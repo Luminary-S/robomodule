@@ -28,6 +28,7 @@
 #include <math.h>
 
 #include <string>
+#include <iomanip>
 
 #include "robomodule/controlcan.h"
 #include "robomodule/kinco/can_application.h"
@@ -98,7 +99,7 @@ class RobomoduleCAN {
   std::string get_name() const { return name; }
   // void set_alive(uint alive) { _ALIVE = alive; }
   // uint get_alive(){return _ALIVE;}
-  bool transtmit_status() {
+  bool transmit_status() {
     if (TRANSMIT_FLAG == 0) {
       return false;
     } else {
@@ -115,6 +116,8 @@ class RobomoduleCAN {
     _PID = PID;
   }
 
+  void set_mode(int mode){moda = mode;}
+
  private:
   std::string name;
   mobile_base::CanApplication can_app;
@@ -122,6 +125,7 @@ class RobomoduleCAN {
   unsigned int _PID;  // dirver number
   unsigned int _CAN_ID;
   // unsigned int _ALIVE;
+  float Rate_;
   int MAX_PWM = 5000;
   float power_limit = 0.5;
   int moda;
@@ -133,16 +137,21 @@ class RobomoduleCAN {
 
   uint TRANSMIT_FLAG = 0;
 
+  uint status = 0;
   float P_;
   float I_;
   float D_;
-  int pwm;
-  float vd;
-  float pd;
+  int pwm = 0;
+  float vd = 0.0;
+  float pd = 0.0;
 
-  double real_pos;
-  double real_vel;
-  double real_cur;
+  double vr = 0.0;
+  double pr = 0.0;
+  double pwm_r = 0.0;
+  
+  double real_pos = 0.0;
+  double real_vel = 0.0;
+  double real_cur = 0.0;
   int16_t real_PWM;
   bool EMERGENCY;
 };  // end class

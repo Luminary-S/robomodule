@@ -3,6 +3,7 @@
 #include "robomodule/kinco/can_application.h"
 // #include "ros.h"
 using mobile_base::CanApplication;
+using rmCan::RobomoduleCAN;
 
 int main(int argc, const char** argv) {
     
@@ -11,7 +12,19 @@ int main(int argc, const char** argv) {
 
 //   ros::Publisher pub = nh.advertise<sensor_msgs::JointState>("rcr_now", 10);
 //   ros::Subscriber sub = nh.subscribe("rcr_target", 10, callback);
-    CanApplication can_app;
+  RobomoduleCAN rbCan;
+  // rbCan.set_id(1, 1);
+  rbCan.ParamInitWithFileByName(ALL_MOTOR_CONFIG_FILE, "CleanMotor");
+  rbCan.can_activate();
+  // rbCan.init_robomodule_setting();
+  rbCan.INIT_MOTOR_DRIVER(); // long beep
+
+  rbCan.SET_DRIVER_MODA(3); // short beep
+  
+  rbCan.SET_DRIVER_AUTO_BACK_INFO(10); // no beep
+  //  return 0; 
+  /*
+  CanApplication can_app;
   can_app.CanActivate("/home/sgl/catkin_new/src/robomodule/config/can_config.yaml");
     //"/home/sgl/catkin_new/src/sensor_startup/config/kinco/can_config.yaml");
 //   ros::Duration(1.0).sleep();
@@ -41,7 +54,55 @@ int main(int argc, const char** argv) {
   delete obj;
 
   sleep(0.8);
+  */
+std::cout << "success" << std::endl;
+  int data_len = 100;
+  int count = 0;
+  while (true)
+  {
+    PVCI_CAN_OBJ data = new VCI_CAN_OBJ[data_len];
 
+    // std::cout << std::hex << "0x" << std::to_string(data[0].ID) <<
+    // std::endl; 
+    uint data_num;
+    int device_type_=3;
+    int device_index_=0; 
+    int can_index_=0;
+    int wait_time_ =-1;
+    data_num = VCI_GetReceiveNum(device_type_, device_index_, can_index_);
+    int receive_num = VCI_Receive(device_type_, device_index_, can_index_, data,
+                                  data_len, wait_time_);
+    std::cout << " data_num : " << data_num << std::endl;
+    std::cout << " receive_num : " << receive_num << std::endl;
+    std::cout << std::hex << "0x"  << (int)data[0].ID << std::endl; 
+    std::cout << std::dec << std::endl;
+    // int16_t real_current = 0;
+    // int16_t real_velocity = 0;
+    // int32_t real_position = 0;
+    if (data[0].ID == 0x11B)
+    {
+    int16_t real_cur = ((data[0].Data[0] << 8) | (data[0].Data[1]));
+    int16_t real_vel = ((data[0].Data[2] << 8) | (data[0].Data[3]));
+    int32_t real_pos = ((data[0].Data[4] << 24) | (data[0].Data[5] << 16) |
+                        (data[0].Data[6] << 8) | (data[0].Data[7]));
+    for (size_t i = 0; i < 8; i++)
+    {
+      std::cout << std::hex << "0x" << (int)data[0].Data[i] << "  ";
+    }
+    // std::cout << std::endl;
+    std::cout << std::dec << std::endl;
+    std::cout << "real_current: " << real_cur << "  \n";
+    std::cout << "real_velocity: " << real_vel << "  \n";
+    std::cout << "real_position: " << real_pos << "  \n" << std::endl;
+    } else
+    {
+      std::cout << "no this motor data!" << std::endl;
+    }
+    
+    delete[] data;
+    sleep(0.001);
+
+  }
 //   int data_len = 100;
 //   int count = 0;
 //   while (ros::ok())
@@ -84,7 +145,7 @@ int main(int argc, const char** argv) {
 //     ros::spinOnce();
 //   }
 
-  can_app.CanClose();
+  rbCan.can_close();
 
   return 0;
 

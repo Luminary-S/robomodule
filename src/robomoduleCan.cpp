@@ -36,7 +36,8 @@ void RobomoduleCAN::INIT_MOTOR_DRIVER() {
   // SET_CAN_ID(0);
   // _CAN_ID = 0x0110;
   _CAN_ID = SET_CAN_ID(0);
-  std::cout << _CAN_ID << std::hex << " 0x" << _CAN_ID << std::endl;
+  // std::cout << _CAN_ID << std::hex << " 0x" << _CAN_ID << std::endl;
+  // std::cout << std::dec << std::endl;
   PVCI_CAN_OBJ obj = can_app.GetVciObject(1, _CAN_ID);  // 0x0010
   // PVCI_CAN_OBJ obj = can_app.GetVciObject(1, 0x1008);
   obj->DataLen = 8;
@@ -47,7 +48,7 @@ void RobomoduleCAN::INIT_MOTOR_DRIVER() {
   // VCI_Transmit(3,0,0,obj,1);
   delete obj;
   // ros::Duration(0.5).sleep();
-  sleep(0.5);  // 500ms
+  sleep(1);  // 500ms
 }
 
 void RobomoduleCAN::SET_DRIVER_MODA(unsigned int mode) {
@@ -67,7 +68,7 @@ void RobomoduleCAN::SET_DRIVER_MODA(unsigned int mode) {
   TRANSMIT_FLAG = can_app.SendCommand(obj, 1);
   delete obj;
   // ros::Duration(0.5).sleep();
-  sleep(0.5);
+  sleep(1);
 }
 
 void RobomoduleCAN::RESET_DRIVER_MODA(unsigned int mode) {
@@ -92,7 +93,7 @@ void RobomoduleCAN::SET_DRIVER_AUTO_BACK_INFO(int period) {
   TRANSMIT_FLAG = can_app.SendCommand(obj, 1);
   delete obj;
   // ros::Duration(0.5).sleep();
-  sleep(0.5);
+  sleep(1);
 }
 
 bool RobomoduleCAN::CHECK_DRIVER_ALIVE() {
@@ -108,18 +109,28 @@ bool RobomoduleCAN::CHECK_DRIVER_ALIVE() {
   PVCI_CAN_OBJ data = new VCI_CAN_OBJ[data_len];
   can_app.GetData(data, data_len);
   bool flag = 0;
-  if (data[0].ID == SET_CAN_ID(11)) {
-    for (size_t i = 0; i < 8; i++) {
-      if (data[0].Data[i] == 0x55) {
-        flag = 1;
-        continue;
-      } else {
-        flag = 0;
-        break;
+  int i = 0;
+  while (i < data_len) {
+    if (data[i].ID == SET_CAN_ID(11)) {
+      for (size_t k = 0; k < 8; k++) {
+        if (data[i].Data[k] == 0x55) {
+          flag = 1;
+          continue;
+        } else {
+          flag = 0;
+          break;
+        }
       }
     }
+    if (flag == 1)
+    {
+      /* code */
+      break;
+    }
+    
+    i++;
   }
-
+  delete[] data;
   if (flag == 1) {
     return true;
   } else {
@@ -164,6 +175,8 @@ void RobomoduleCAN::open_loop_cmd(int pwm) {
 
 // velocity moda, index: 4, suggest send rate: 10ms
 void RobomoduleCAN::vel_cmd(float vel) {
+  std::cout << "enter velocity moda, target vel: " << vel << "  \n";
+  std::cout << "MAX_PWM: " << MAX_PWM << "  \n";
   _CAN_ID = SET_CAN_ID(4);
   int temp_pwm = MAX_PWM;
   PVCI_CAN_OBJ cmd_obj = can_app.GetVciObject(1, _CAN_ID);
@@ -254,18 +267,20 @@ void RobomoduleCAN::ParamInitWithFileByName(const std::string& file_address,
   P_ = can_config[name]["P"].as<double>();
   I_ = can_config[name]["I"].as<double>();
   D_ = can_config[name]["D"].as<double>();
+  Rate_ = can_config[name]["pub_rate"].as<double>();
   can_app.ReadCanFile(_CONFIG_FILE);
-  std::cout<< "GID: " << _GID <<", pid: "<<_PID<< std::endl;
+  std::cout << "GID: " << _GID << ", pid: " << _PID << std::endl;
 }
 
 void RobomoduleCAN::init_robomodule_setting() {
   MAX_PWM = power_limit * MAX_PWM;
   Vel2RPM = M_PI * _DIAMETER / 60.0;  // mm/s to RPM
   Pos2Encoder =
-      1.0 / M_PI / _DIAMETER * _BASIC_ENCODER_LINES * _REDUCTION_RATIO;
+      1.0 / M_PI / _DIAMETER * _BASIC_ENCODER_LINES * _REDUCTION_RATIO; // mm
   // std::cout << _GID << std::endl;
-  
+
   INIT_MOTOR_DRIVER();
+  std::cout << moda << std::endl;
   SET_DRIVER_MODA(moda);
   SET_DRIVER_AUTO_BACK_INFO(10);
 }
@@ -273,22 +288,26 @@ void RobomoduleCAN::init_robomodule_setting() {
 void RobomoduleCAN::SEND_CMD() {
   int index = moda + 1;
   // SET_CAN_ID(index);
+  std::cout << "index: " << index << "  \n";
   switch (index) {
     case 2 /* constant-expression */:
       /* code */
-      open_loop_cmd(pwm);
+      open_loop_cmd(pwm_r);
       break;
     case 4 /* constant-expression */:
       /* code */
-      vel_cmd(vd);
+      vr = speed_controller(vd, real_vel, 1.0 / Rate_);
+      vel_cmd(vr);
       break;
     case 5 /* constant-expression */:
       /* code */
-      pos_cmd(pd);
+      pos_cmd(pr);
       break;
     case 6 /* constant-expression */:
       /* code */
-      vel_pos_cmd(vd, pd);
+      vr = vd;
+      pr = pd;
+      vel_pos_cmd(vr, pr);
       break;
 
     default:
@@ -297,47 +316,59 @@ void RobomoduleCAN::SEND_CMD() {
 }
 
 void RobomoduleCAN::GET_DATA() {
-  int data_len = 100;
+  int data_len = 500;
   PVCI_CAN_OBJ data = new VCI_CAN_OBJ[data_len];
   can_app.GetData(data, data_len);
-  if (data[0].ID == SET_CAN_ID(11)) {
-    int16_t real_cur = (data[0].Data[0] << 8) | data[0].Data[1];
-    int16_t real_vel = (data[0].Data[2] << 8) | data[0].Data[3];
-    int32_t real_pos = (data[0].Data[4] << 24) | (data[0].Data[5] << 16) |
-                       (data[0].Data[6] << 8) | data[0].Data[7];
-    real_vel = real_vel * Vel2RPM;
-    real_pos = real_pos / Pos2Encoder;
-    std::cout << "real_current: " << real_cur << "  \n";
-    std::cout << "real_velocity: " << real_vel << "  \n";
-    std::cout << "real_position: " << real_pos << "  \n" << std::endl;
-  } else if (data[0].ID == SET_CAN_ID(13) && data[0].Data[0] == 0x01) {
-    EMERGENCY = 1;
-    std::cout << "motor is stuck!!!" << std::endl;
-    return;
-  } else if (data[0].ID == SET_CAN_ID(12)) {
-    real_PWM = (data[0].Data[6] << 8) | data[0].Data[7];
-  }
+  int i = 0;
+  while (i < data_len) {
+    if (data[i].ID == SET_CAN_ID(11)) {
+      for (size_t i = 0; i < 8; i++) {
+        std::cout << std::hex << std::setw(2) << (int)data[i].Data[i] << "  ";
+      }
+      std::cout << std::dec << std::endl;
 
+      int16_t real_cur = ((data[i].Data[0] << 8) | (data[i].Data[1]));
+      int16_t real_vel = ((data[i].Data[2] << 8) | (data[i].Data[3]));
+      int32_t real_pos = ((data[i].Data[4] << 24) | (data[i].Data[5] << 16) |
+                          (data[i].Data[6] << 8) | (data[i].Data[7]));
+      std::cout << "real_cur: " << real_cur << "  \n";
+      std::cout << "real_vel: " << real_vel << "  \n";
+      std::cout << "real_pos: " << real_pos << "  \n" << std::endl;
+
+      real_vel = real_vel * Vel2RPM;
+      real_pos = real_pos / Pos2Encoder;
+      std::cout << "real_current: " << real_cur << "  \n";
+      std::cout << "real_velocity: " << real_vel << "  \n";
+      std::cout << "real_position: " << real_pos << "  \n" << std::endl;
+      break;
+    } else if (data[i].ID == SET_CAN_ID(13) && data[i].Data[0] == 0x01) {
+      EMERGENCY = 1;
+      std::cout << "motor is stuck!!!" << std::endl;
+      break;
+      // return;
+    } else if (data[i].ID == SET_CAN_ID(12)) {
+      real_PWM = (data[i].Data[6] << 8) | data[i].Data[7];
+      break;
+    }
+    i++;
+  }
   delete[] data;
 }
 
-void RobomoduleCAN::update(){
-    // 1. get cmd, for test, if ros, it should be subscribe from msg
-    set_vd(2.0);
-    set_pd(1.0);
-    // 2. send cmd
-    SEND_CMD();
-    // 3. publish data
-    GET_DATA();
+void RobomoduleCAN::update() {
+  GET_DATA();
+  // 2. send cmd
+  // vd = 200;
+  SEND_CMD();
 }
 
 float RobomoduleCAN::speed_controller(float target, float position,
-                                   float interval) {
+                                      float interval) {
   // ROS_INFO(" speed controller part ");
   float speed;
   float speed_des = (target - position) / interval;
   // int kp = 10;
-  speed = speed_des - P_ / 100.0 *  (target - position) ;
+  speed = speed_des - P_ / 100.0 * (target - position);
   // packDataCmd(target, (int)(speed*100), 0, direction, 1);
   return speed;
 }
@@ -367,7 +398,7 @@ float RobomoduleCAN::speed_controller(float target, float position,
 //   //   }
 //   // rbCan.
 //   // VCI_Transmit(3, 0, 0, obj, 1);
-//   // rbCan.init_robomodule_setting();
+//   rbCan.init_robomodule_setting();
 //   rbCan.INIT_MOTOR_DRIVER();
 //   // delete[] obj;
 //   // sleep(1);
@@ -378,15 +409,20 @@ float RobomoduleCAN::speed_controller(float target, float position,
 //   // ros::init(argc, argv, "test_cpp");
 //   // ros::NodeHandle nh;
 
-//   // ros::Publisher pub = nh.advertise<sensor_msgs::JointState>("rcr_now", 10);
+//   // ros::Publisher pub = nh.advertise<sensor_msgs::JointState>("rcr_now",
+//   // 10);
 //   // ros::Subscriber sub = nh.subscribe("rcr_target", 10, callback);
 
-//   // rbCan.can_app.CanActivate("/home/sgl/catkin_new/src/sensor_startup/config/kinco/can_config.yaml");
+//   //
+//   //
+//   rbCan.can_app.CanActivate("/home/sgl/catkin_new/src/sensor_startup/config/kinco/can_config.yaml");
 //   // ros::Duration(1.0).sleep();
 
-//   // PVCI_CAN_OBJ obj = can_app.GetVciObject(1, 0x0010); // can id = goup + num
-//   // + control index ; here is  0x010; group 0, num 1 , control index of init 0.
-//   // //PVCI_CAN_OBJ obj = can_app.GetVciObject(1, 0x1008);
+//   // PVCI_CAN_OBJ obj = can_app.GetVciObject(1, 0x0010); // can id = goup +
+//   // num
+//   // + control index ; here is  0x010; group 0, num 1 , control index of init
+//   // 0.
+//   //PVCI_CAN_OBJ obj = can_app.GetVciObject(1, 0x1008);
 //   // obj->DataLen = 8;
 //   // for (size_t i = 0; i < 8; i++)
 //   // {
@@ -404,22 +440,35 @@ float RobomoduleCAN::speed_controller(float target, float position,
 
 //   // obj->ID = 0x001a; // set automatically return data, index a
 //   // obj->Data[0] = 0x0a;
-//   // obj->Data[1] = 0x0; // if setting as 0x0a, other info can be gotta, refer
+//   // obj->Data[1] = 0x0; // if setting as 0x0a, other info can be gotta,
+//   // refer
 //   // to guide. can_app.SendCommand(obj, 1);
 
 //   // delete obj;
 
 //   // ros::Duration(0.8).sleep();
 
-//   // int data_len = 100;
-//   // int count = 0;
-//   // while (ros::ok())
-//   // {
-//   // PVCI_CAN_OBJ data = new VCI_CAN_OBJ[data_len];
+//   int data_len = 100;
+//   int count = 0;
+//   while (true)
+//   {
+//   PVCI_CAN_OBJ data = new VCI_CAN_OBJ[data_len];
 
-//   // //std::cout << std::hex << "0x" << std::to_string(data[0].ID) <<
-//   // std::endl; can_app.GetData(data, data_len); std::cout << std::hex << "0x"
-//   // << (int)data[0].ID << std::endl; int16_t real_current = 0; int16_t
+//   std::cout << std::hex << "0x" << std::to_string(data[0].ID) <<
+//   std::endl;
+//   uint data_num;
+//   int device_type_=3;
+//   int device_index_=0;
+//   int can_index_=0;
+//   int wait_time_ = 1;
+//   data_num = VCI_GetReceiveNum(device_type_, device_index_, can_index_);
+//   int receive_num = VCI_Receive(device_type_, device_index_, can_index_,
+//   data,
+//                                 data_len, wait_time_);
+//   std::cout << " data_num : " << data_num << std::endl;
+//   std::cout << std::hex << "0x"  << (int)data[0].ID << std::endl;
+//   std::cout << std::dec << std::endl;
+//   // int16_t real_current = 0; int16_t
 //   // real_velocity = 0; int32_t real_position = 0; if (data[0].ID == 0x01B)
 //   // {
 //   //   real_current = (data[0].Data[0] << 8) | data[0].Data[1];
@@ -435,8 +484,8 @@ float RobomoduleCAN::speed_controller(float target, float position,
 //   //   //   std::cout << std::hex << "0x" << (int)data[0].Data[i] << "  ";
 //   //   // }
 //   //   // std::cout << std::endl;
-//   //   delete[] data;
-
+//     delete[] data;
+//   sleep(0.1);
 //   //   ros::Duration(1.0).sleep();
 
 //   //   sensor_msgs::JointState js;
@@ -444,12 +493,13 @@ float RobomoduleCAN::speed_controller(float target, float position,
 //   //   js.header.stamp = ros::Time::now();
 
 //   //   js.velocity.push_back( (double)real_velocity/ 40.0 * 12.7 ); // mm/s
-//   //   js.position.push_back( (double)real_position / 150000.0 * 125  ); // mm
+//   //   js.position.push_back( (double)real_position / 150000.0 * 125  ); //
+//   // mm
 //   //   js.effort.push_back( (double)real_current );
 //   //   pub.publish(js);
 
 //   //   ros::spinOnce();
-//   // }
+//   }
 
 //   // can_app.CanClose();
 //   rbCan.can_close();

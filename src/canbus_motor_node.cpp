@@ -31,9 +31,10 @@ void canBusNode::readConfigFile(const std::string& file_address) {
     Motor m;
     m.rate = it->second["pub_rate"].as<double>();
     m.alive = it->second["Alive"].as<int>();
+    m.mode = it->second["Mode"].as<int>();
     m.canMotor.set_name(name);
     m.canMotor.ParamInitWithFileByName(ALL_MOTOR_CONFIG_FILE, name);
-
+    m.multiplier = get_rate() / m.rate;
     motorunits_map[name] = m;
   }
 }
@@ -50,121 +51,147 @@ void canBusNode::cmdCallback(
 void canBusNode::Publish(ros::Publisher& pub, const std::string& frame_id,
                          const MotorInfo& data) {
   // sensor_msgs::JointState js;
-  control_msgs::SingleJointPositionFeedback mp;
-  mp.header.frame_id = frame_id;  // NAME_;  //"rcrmotor";
-  mp.header.stamp = ros::Time::now();
+  control_msgs::SingleJointPositionFeedback msg;
+  msg.header.frame_id = frame_id;  // NAME_;  //"rcrmotor";
+  msg.header.stamp = ros::Time::now();
   // mp.header.frame_id = ;
-  mp.velocity = data.v;
-  mp.position = data.p;
-  mp.error = data.error;
-  pub.publish(mp);
+  msg.velocity = data.v;
+  msg.position = data.p;
+  msg.error = data.error;
+  pub.publish(msg);
 }
 
 MotorInfo canBusNode::getMotorInfo(Motor& m) {
   MotorInfo data;
   data.v = m.canMotor.get_real_vel();
   data.p = m.canMotor.get_real_pos();
-  data.error = m.canMotor.get_pd() - m.canMotor.get_real_cur();
+  if (m.mode == VELOCITY_MODE) {
+    data.error = m.canMotor.get_vd() - m.canMotor.get_real_vel();
+  } else if (m.mode == POS_VEL_MODE) {
+    data.error = m.canMotor.get_pd() - m.canMotor.get_real_pos();
+  }
+
   return data;
 }
 
-// motor thread processing detail
-void canBusNode::proc(std::string name) {
-  ros::Subscriber sub;
-  ros::Publisher pub;
+void canBusNode::motor_ros_init(Motor& m, std::string name) {
+  // ros::Subscriber sub;
+  // ros::Publisher pub;
   std::string topic_name = name + "_cmd";     // e.g.: CleanMotor_cmd
   std::string fd_data_name = name + "_data";  // e.g.: CleanMotor_data
-  sub = nh_.subscribe<control_msgs::SingleJointPositionActionGoal>(
+  m.sub = nh_.subscribe<control_msgs::SingleJointPositionActionGoal>(
       topic_name, 10, boost::bind(&canBusNode::cmdCallback, this, _1, name));
-  pub = nh_.advertise<control_msgs::SingleJointPositionFeedback>(fd_data_name,
-                                                                 10);
-  ros::Rate r(motorunits_map[name].rate);
-  while (ros::ok()) {
-    std::cout << name << " is printing!" << std::endl;
+  m.pub = nh_.advertise<control_msgs::SingleJointPositionFeedback>(fd_data_name,
+                                                                   10);
 
-    // 1. get cmd
-    motorunits_map[name].canMotor.update();
-    MotorInfo data = getMotorInfo(motorunits_map[name]);
-    Publish(pub, name, data);
-
-    r.sleep();
-    ros::spinOnce();
-  }
-  motorunits_map[name].alive = 0;
+  // motorunits_map[name].alive = 0;
 }
 
-// main function, canbus operation
-void canBusNode::update() {
-  //   int nSize = motorunits_map.size();
-  // //   pthread_t threads[nSize];
+void canBusNode::update_motor_param(std::string n) {
+  int md;
+  std::string name = "test_" + n + "_node/" + n + "mode";
+  ros::param::get(name, md);
 
-  rmCan::RobomoduleCAN canStartUP;
-  canStartUP.can_activate();
+  motorunits_map[name].mode = md;
+  motorunits_map[name].canMotor.set_mode(md);
+  motorunits_map[name].canMotor.init_robomodule_setting();
+}
 
-  // create sub thread
+void canBusNode::startUP() {
+  // 1. start can analysis
+  // rmCan::RobomoduleCAN canStartUP;
+
+  std::cout << " begin start up..." << std::endl;
+  // 2. init each motor
   std::map<std::string, Motor>::iterator ite;
-  //   int num = 0;
+
   for (ite = motorunits_map.begin(); ite != motorunits_map.end(); ++ite) {
+    std::cout << " ----  read motor data file ----" << std::endl;
     std::string name = ite->first;
     if (ite->second.alive == 1) {
       std::cout << name << " is alive, start init..." << std::endl;
-      ite->second.canMotor.init_robomodule_setting();
-      if (ite->second.canMotor.transtmit_status()) {
-        std::cout << name << " init finished! " << std::endl;
-      } else {
-        std::cout << name << " sth error in the transmitting process !"
-                  << std::endl;
-        return;
+      while (true) {
+        if (!ite->second.canMotor.transmit_status()) {
+          std::cout << name << " motor no transimitting ! " << std::endl;
+          ite->second.canMotor.init_robomodule_setting();
+        } else {
+          std::cout << name << " motor init success ! " << std::endl;
+          std::cout << name << " transimitting state: "
+                    << ite->second.canMotor.transmit_status() << std::endl;
+          motor_ros_init(ite->second, name);
+          // ite->second.canMotor.update();
+          //           sleep(0.5);
+          // ite->second.canMotor.update();
+          // sleep(0.5);
+          // ite->second.canMotor.update();
+          // ite->second.canMotor.update();
+          break;
+        }
       }
-
-      std::thread t(&canBusNode::proc, this, name);
-      // std::thread t = memThread(nh,name);
-      //   t.detach();
-      thread_map[name] = t;
 
     } else {
       std::cout << name
                 << "is dead, if it should be started up, set the motor's Alive "
                    "param in config file."
                 << std::endl;
+      return;
     }
-    // num++;
+    sleep(1);
+    std::cout << " ---- one motor init finished ----" << std::endl;
   }
+}
 
-// https://www.bookstack.cn/read/Cpp_Concurrency_In_Action/content-chapter2-2.5-chinese.md
-//https://wizardforcel.gitbooks.io/cpp-11-faq/content/77.html
-  for (std::map<std::string, std::thread>::iterator it = thread_map.begin();
-       it != thread_map.end(); it++){
-    std::cout << it->first << " add into thread list !" << std::endl;
-  it->second.join();
-       }
-  //   return;
+void canBusNode::timerProc(unsigned int timer_cnt) {
+  std::map<std::string, Motor>::iterator ite;
+  // motorunits_map["CleanMotor"].canMotor.update();
+  // std::cout << motorunits_map["CleanMotor"].canMotor << std::endl;
+  // std::cout << motorunits_map["RCRMotor"] << std::endl;
+  // return;
+  for (ite = motorunits_map.begin(); ite != motorunits_map.end(); ++ite) {
+    std::string name = ite->first;
+    if (ite->second.alive == 1) {
+      std::cout << name << " is alive, start working..." << std::endl;
+      if (ite->second.canMotor.transmit_status()) {
+        //   std::cout << name << " motor no transimitting ! " << std::endl;
+        //   ite->second.canMotor.init_robomodule_setting();
+        // } else {
+        std::cout << name << " motor works WELL ! " << std::endl;
+        // multiplier is 2, means if main rate is 100, motor control rate is 50,
+        // s.t. cnt counts to 2 times, motor gets and sends one cmd
+        if (timer_cnt % ite->second.multiplier == 0) {
+          std::cout << name << " send cmds ! " << std::endl;
+          ite->second.canMotor.update();
 
-  // main thread
-  //   float rate = get_rate();
-  //   ros::Rate r(rate);
-  //   while (ros::ok()) {
-  //     std::cout << "main check thread is running!" << std::endl;
-  //     bool running = false;
-  //     for (ite = motorunits_map.begin(); ite != motorunits_map.end(); ++ite)
-  //     {
-  //       if (ite->second.alive == 1) {
-  //         running = true;
-  //         std::cout << "sub thread " << ite->first << " is still running!"
-  //                   << std::endl;
-  //       }
-  //     }
-  //     if (!running) {
-  //       break;
-  //     }
-  //     r.sleep();
-  //     ros::spinOnce();
-  //   }
+          // MotorInfo data = getMotorInfo(ite->second);
+          Publish(ite->second.pub, name, getMotorInfo(ite->second));
+        }
+      } else {
+        std::cout << name << " is not alive!" << std::endl;
+      }
+    }
+  }
+}
 
-  // thread exit
-  //   pthread_exit(NULL);
-  std::cout << "all process is done!" << std::endl;
-  canStartUP.can_close();
+void canBusNode::update() {
+  int64_t timer_cnt = 0;
+  canStartUP.can_activate();
+  startUP();
+  std::cout << " ----- finish startup ! ------ " << std::endl;
+
+  float rate = get_rate();
+  ros::Rate r(rate);
+  while (ros::ok()) {
+    timer_cnt = timer_cnt + 1;
+    std::cout << " ----- loop " << timer_cnt << " ! ------ " << std::endl;
+    timerProc(timer_cnt);
+    r.sleep();
+    ros::spinOnce();
+    if (_DEBUG_) {
+      if (timer_cnt == 20) {
+        return;
+      }
+    }
+  }
 }
 
 }  // namespace dcmotor

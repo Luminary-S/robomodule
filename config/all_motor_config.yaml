@@ -1,6 +1,6 @@
 CleanMotor:
   Alive: 1
-  pub_rate: 30.0
+  pub_rate: 25.0
   PowerLimit: 0.5
   GroupNum: 1
   DeviceNum: 1
@@ -18,12 +18,12 @@ CleanMotor:
 
 # Can_File: "/home/sgl/catkin_new/src/robomodule/config/can_config.yaml"
 RCRMotor:
-  pub_rate: 100.0
-  Alive: 0
+  pub_rate: 50.0
+  Alive: 1
   PowerLimit: 1
   GroupNum: 0
   DeviceNum: 1
-  Mode: 3  # 1: open loop; 3: velocity; 4: position;5:vel-pos;
+  Mode: 5  # 1: open loop; 3: velocity; 4: position;5:vel-pos;
 
 
   Diameter: 508.0 #40*12.7mm, brush head diameter

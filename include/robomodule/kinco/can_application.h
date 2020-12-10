@@ -19,6 +19,7 @@ class CanApplication {
   // device
   void ReadCanFile(const std::string& file_address);
   void CanClose();
+  void CanReset();
   // open, initialize and start the can device
   void CanActivate(const std::string& file_address);
   PVCI_CAN_OBJ GetVciObject(const int& obj_num, const uint& initial_id);

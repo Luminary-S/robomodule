@@ -42,6 +42,9 @@ void CanApplication::CanActivate(const std::string& file_address) {
 void CanApplication::CanClose() {
   VCI_CloseDevice(device_type_, device_index_);
 }
+void CanApplication::CanReset(){
+  DWORD dwRel = VCI_ResetCAN(device_type_, device_index_, can_index_);
+}
 
 void CanApplication::CanDiagnostic(const std::string& description,
                                    const int& state) {
@@ -105,13 +108,21 @@ uint CanApplication::SendCommand(PVCI_CAN_OBJ obj, const uint& obj_len) {
 }
 
 void CanApplication::GetData(PVCI_CAN_OBJ obj, const int& obj_len) {
-  int data_num = VCI_GetReceiveNum(device_type_, device_index_, can_index_);
-  if (-1 == data_num) {
-    std::cout << "Get data number failure!" << std::endl;
-  } else if (0 == data_num) {
-    std::cout << "No data in the buffer" << std::endl;
-  }
-
+  // std::cout << " device_type_ : " << device_type_ << std::endl;
+  // std::cout << " device_index_ : " << device_index_ << std::endl;
+  // std::cout << " can_index_ : " << can_index_ << std::endl;
+  // std::cout << " wait_time_ : " << wait_time_ << std::endl;
+  uint data_num;
+  data_num = VCI_GetReceiveNum(device_type_, device_index_, can_index_);
+  std::cout << " data_num : " << data_num << std::endl;
+  // if (-1 == data_num) {
+  //   std::cout << "Get data number failure!" << std::endl;
+  // } else if (0 == data_num) {
+  //   std::cout << "No data in the buffer" << std::endl;
+  // }
   int receive_num = VCI_Receive(device_type_, device_index_, can_index_, obj,
                                 obj_len, wait_time_);
+  std::cout << " receive_num : " << receive_num << std::endl;
+
+
 }

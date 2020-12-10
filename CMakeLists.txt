@@ -43,7 +43,9 @@ target_link_libraries(robo_can_app
 )
 
 
-add_executable(can_test src/test_can.cpp)
+add_executable(can_test 
+  src/test_can.cpp
+  src/robomoduleCan.cpp)
 target_link_libraries(can_test
  robo_can_app 
  usbcan 
